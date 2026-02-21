@@ -18,7 +18,7 @@ from src.data_loader import load_clean_data, load_engineered_data
 from src.visualization import (
     histogram, box_plot, violin_plot, bar_chart, scatter_plot,
     correlation_heatmap, pie_chart, sunburst_chart, line_chart,
-    apply_layout, COLORS, COLOR_PRIMARY, COLOR_SECONDARY, COLOR_ACCENT,
+    apply_layout, COLORS, COLOR_PRIMARY, COLOR_SECONDARY, COLOR_ACCENT, COLOR_WARN,
 )
 
 st.set_page_config(page_title="Exploratory Analysis | UAE Cars ML", layout="wide", page_icon="--")
