@@ -178,6 +178,224 @@ with tab6:
 st.markdown("---")
 
 # ============================================================
+# Section 1.4: Outlier Analysis
+# ============================================================
+st.subheader("1.4 Price Outlier Analysis")
+st.markdown("""
+Given the extreme skewness of the price distribution (skewness = 9.28), outlier analysis is 
+critical for understanding data quality and model training decisions. We use the **Interquartile 
+Range (IQR) method** to identify statistical outliers.
+""")
+
+# Calculate outlier statistics
+Q1_price = df["Price"].quantile(0.25)
+Q3_price = df["Price"].quantile(0.75)
+IQR_price = Q3_price - Q1_price
+lower_bound = max(0, Q1_price - 1.5 * IQR_price)
+upper_bound = Q3_price + 1.5 * IQR_price
+
+outliers_df = df[(df["Price"] < lower_bound) | (df["Price"] > upper_bound)]
+upper_outliers = df[df["Price"] > upper_bound]
+n_outliers = len(outliers_df)
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Q1 (25th percentile)", f"{Q1_price:,.0f} AED")
+col2.metric("Q3 (75th percentile)", f"{Q3_price:,.0f} AED")
+col3.metric("IQR", f"{IQR_price:,.0f} AED")
+col4.metric("Outlier Threshold", f"{upper_bound:,.0f} AED")
+
+col1, col2, col3 = st.columns(3)
+col1.metric("Total Outliers", f"{n_outliers:,}", delta=f"{n_outliers/len(df)*100:.1f}% of data")
+col2.metric("Upper Outliers", f"{len(upper_outliers):,}", delta="High-priced vehicles")
+col3.metric("Outlier Price Range", f"{upper_outliers['Price'].min():,.0f} - {upper_outliers['Price'].max():,.0f} AED")
+
+# Box plot with outliers highlighted
+fig = go.Figure()
+fig.add_trace(go.Box(
+    x=df["Price"],
+    name="All Cars",
+    marker_color=COLOR_PRIMARY,
+    boxpoints="outliers",
+))
+fig.update_layout(xaxis_title="Price (AED)")
+fig = apply_layout(fig, "Price Distribution with Outliers (Box Plot)", height=300)
+st.plotly_chart(fig, use_container_width=True)
+
+# Outlier composition
+st.markdown("**Outlier Composition by Brand:**")
+outlier_makes = upper_outliers["Make_Display"].value_counts().head(10).reset_index()
+outlier_makes.columns = ["Make", "Outlier Count"]
+
+col1, col2 = st.columns([1, 1])
+with col1:
+    fig = px.bar(outlier_makes, x="Outlier Count", y="Make", orientation="h",
+                 color_discrete_sequence=[COLOR_WARN])
+    fig = apply_layout(fig, "Top 10 Brands in Outlier Range", height=400)
+    st.plotly_chart(fig, use_container_width=True)
+
+with col2:
+    outlier_bt = upper_outliers["Body Type"].value_counts().reset_index()
+    outlier_bt.columns = ["Body Type", "Count"]
+    fig = pie_chart(outlier_bt["Count"], outlier_bt["Body Type"],
+                    title="Outlier Distribution by Body Type")
+    st.plotly_chart(fig, use_container_width=True)
+
+st.markdown(f"""
+**Key Findings:**
+
+1. **{n_outliers:,} listings ({n_outliers/len(df)*100:.1f}%)** are classified as price outliers
+2. Upper outliers (>${upper_bound:,.0f} AED) are dominated by:
+   - **Luxury brands:** McLaren, Rolls-Royce, Ferrari, Lamborghini, Bentley
+   - **Premium variants:** High-end Mercedes-Benz (AMG, Maybach), Porsche
+3. **Sports Cars and SUVs** comprise the majority of outlier body types
+4. These outliers represent the **luxury segment** which behaves differently from mass market
+
+**Modeling Implications:**
+- Training on raw prices leads to poor R² due to extreme variance
+- **Log-transformation** of price helps normalize the distribution (skewness drops from 9.28 to ~0.8)
+- Separate models for luxury vs mass-market may improve predictions
+- Or using quantile regression for better handling of price extremes
+""")
+
+st.markdown("---")
+
+# ============================================================
+# Section 1.5: Luxury vs Mass Market Deep Dive
+# ============================================================
+st.subheader("1.5 Luxury vs Mass-Market Deep Dive")
+st.markdown("""
+The UAE used car market exhibits a distinct **two-tier structure**. This section provides 
+a comprehensive comparison between luxury and mass-market segments.
+""")
+
+# Define segments
+luxury_makes = ["ferrari", "lamborghini", "rolls-royce", "bentley", "maserati",
+                "aston-martin", "mclaren", "maybach", "porsche", "bugatti"]
+df_lux = df[df["Make"].isin(luxury_makes)].copy()
+df_mass = df[~df["Make"].isin(luxury_makes)].copy()
+
+# Key metrics comparison
+col1, col2 = st.columns(2)
+with col1:
+    st.markdown("### Luxury Segment")
+    st.metric("Total Listings", f"{len(df_lux):,}", delta=f"{len(df_lux)/len(df)*100:.1f}% of market")
+    st.metric("Average Price", f"{df_lux['Price'].mean():,.0f} AED")
+    st.metric("Median Price", f"{df_lux['Price'].median():,.0f} AED")
+    st.metric("Avg Cylinders", f"{df_lux['Cylinders'].mean():.1f}")
+    st.metric("Avg Year", f"{df_lux['Year'].mean():.0f}")
+
+with col2:
+    st.markdown("### Mass Market")
+    st.metric("Total Listings", f"{len(df_mass):,}", delta=f"{len(df_mass)/len(df)*100:.1f}% of market")
+    st.metric("Average Price", f"{df_mass['Price'].mean():,.0f} AED")
+    st.metric("Median Price", f"{df_mass['Price'].median():,.0f} AED")
+    st.metric("Avg Cylinders", f"{df_mass['Cylinders'].mean():.1f}")
+    st.metric("Avg Year", f"{df_mass['Year'].mean():.0f}")
+
+# Price comparison violin
+df_segment = df.copy()
+df_segment["Segment"] = df_segment["Make"].apply(lambda x: "Luxury" if x in luxury_makes else "Mass Market")
+
+fig = px.violin(df_segment, x="Segment", y="Price", color="Segment", box=True,
+                color_discrete_sequence=[COLOR_WARN, COLOR_PRIMARY])
+fig = apply_layout(fig, "Price Distribution by Market Segment", height=450)
+st.plotly_chart(fig, use_container_width=True)
+
+# Feature differences
+st.markdown("**Feature Availability by Segment:**")
+feature_cols = ["has_sunroof", "has_leather_seats", "has_navigation_system", 
+                "has_bluetooth", "has_rear_camera", "has_adaptive_cruise_control"]
+
+if all(col in df_eng.columns for col in feature_cols):
+    df_eng_seg = df_eng.copy()
+    df_eng_seg["Segment"] = df_eng_seg["Make"].apply(lambda x: "Luxury" if x in luxury_makes else "Mass Market")
+    
+    feature_summary = []
+    for feat in feature_cols:
+        feat_name = feat.replace("has_", "").replace("_", " ").title()
+        lux_pct = df_eng_seg[df_eng_seg["Segment"] == "Luxury"][feat].mean() * 100
+        mass_pct = df_eng_seg[df_eng_seg["Segment"] == "Mass Market"][feat].mean() * 100
+        feature_summary.append({
+            "Feature": feat_name,
+            "Luxury (%)": round(lux_pct, 1),
+            "Mass Market (%)": round(mass_pct, 1),
+            "Difference": round(lux_pct - mass_pct, 1),
+        })
+    
+    feat_df = pd.DataFrame(feature_summary)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        name="Luxury",
+        x=feat_df["Feature"],
+        y=feat_df["Luxury (%)"],
+        marker_color=COLOR_WARN,
+    ))
+    fig.add_trace(go.Bar(
+        name="Mass Market",
+        x=feat_df["Feature"],
+        y=feat_df["Mass Market (%)"],
+        marker_color=COLOR_PRIMARY,
+    ))
+    fig.update_layout(barmode="group", xaxis_tickangle=45)
+    fig = apply_layout(fig, "Feature Penetration Rate by Segment (%)", height=400)
+    st.plotly_chart(fig, use_container_width=True)
+
+# Cylinder distribution comparison
+st.markdown("**Cylinder Distribution by Segment:**")
+col1, col2 = st.columns(2)
+
+with col1:
+    lux_cyl = df_lux["Cylinders"].value_counts().sort_index().reset_index()
+    lux_cyl.columns = ["Cylinders", "Count"]
+    fig = px.bar(lux_cyl, x="Cylinders", y="Count", color_discrete_sequence=[COLOR_WARN])
+    fig = apply_layout(fig, "Luxury Segment Cylinders", height=350)
+    st.plotly_chart(fig, use_container_width=True)
+
+with col2:
+    mass_cyl = df_mass["Cylinders"].value_counts().sort_index().reset_index()
+    mass_cyl.columns = ["Cylinders", "Count"]
+    fig = px.bar(mass_cyl, x="Cylinders", y="Count", color_discrete_sequence=[COLOR_PRIMARY])
+    fig = apply_layout(fig, "Mass Market Cylinders", height=350)
+    st.plotly_chart(fig, use_container_width=True)
+
+# Body type comparison
+st.markdown("**Body Type Preferences by Segment:**")
+lux_bt = df_lux["Body Type"].value_counts().head(5).reset_index()
+lux_bt.columns = ["Body Type", "Count"]
+lux_bt["Segment"] = "Luxury"
+
+mass_bt = df_mass["Body Type"].value_counts().head(5).reset_index()
+mass_bt.columns = ["Body Type", "Count"]
+mass_bt["Segment"] = "Mass Market"
+
+combined_bt = pd.concat([lux_bt, mass_bt])
+fig = px.bar(combined_bt, x="Body Type", y="Count", color="Segment",
+             barmode="group", color_discrete_sequence=[COLOR_WARN, COLOR_PRIMARY])
+fig = apply_layout(fig, "Top 5 Body Types by Market Segment", height=400)
+st.plotly_chart(fig, use_container_width=True)
+
+st.markdown(f"""
+**Key Segment Differences:**
+
+| Metric | Luxury | Mass Market | Ratio |
+|--------|--------|-------------|-------|
+| Average Price | {df_lux['Price'].mean():,.0f} AED | {df_mass['Price'].mean():,.0f} AED | **{df_lux['Price'].mean()/df_mass['Price'].mean():.1f}x** |
+| Median Price | {df_lux['Price'].median():,.0f} AED | {df_mass['Price'].median():,.0f} AED | **{df_lux['Price'].median()/df_mass['Price'].median():.1f}x** |
+| Avg Cylinders | {df_lux['Cylinders'].mean():.1f} | {df_mass['Cylinders'].mean():.1f} | **{df_lux['Cylinders'].mean()/df_mass['Cylinders'].mean():.1f}x** |
+| Market Share | {len(df_lux)/len(df)*100:.1f}% | {len(df_mass)/len(df)*100:.1f}% | 1:{len(df_mass)//len(df_lux)} |
+
+**Business Insights:**
+1. **Luxury brands command 5-6x higher prices** on average
+2. **Cylinders correlate strongly with segment** - luxury averages ~8 cylinders vs ~5.5 for mass market
+3. **Sports Cars dominate luxury listings** while SUVs lead mass market
+4. **Feature penetration is similar** across segments, suggesting features don't differentiate price tiers
+5. The **two-tier market structure** explains why linear models struggle - different pricing mechanisms apply
+""")
+
+st.markdown("---")
+
+# ============================================================
 # Section 2: Bivariate Analysis
 # ============================================================
 st.header("2. Bivariate Analysis")

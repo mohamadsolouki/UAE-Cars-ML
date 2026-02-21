@@ -59,10 +59,67 @@ best_reg_name = metrics_data["regression"]["best_model"]
 best_reg_key = "price_" + best_reg_name.lower().replace(" ", "_") + ".joblib"
 reg_model = load_model(best_reg_key)
 
+# Check if model uses log-transformed target
+uses_log_transform = metrics_data["regression"].get(best_reg_name, {}).get("uses_log_transform", False)
+
 # Load classification models
 best_cls_name = metrics_data["classification"]["best_model"]
 best_cls_key = "bodytype_" + best_cls_name.lower().replace(" ", "_") + ".joblib"
 cls_model = load_model(best_cls_key)
+
+
+def validate_car_configuration(make, body_type, cylinders):
+    """
+    Validate if a car configuration is plausible based on historical data.
+    Returns (is_valid, warning_messages).
+    """
+    warnings = []
+    is_plausible = True
+    
+    # Get validation constraints from metadata
+    valid_cyls_by_bt = metadata.get("valid_cylinders_by_body_type", {})
+    valid_cyls_by_make = metadata.get("valid_cylinders_by_make", {})
+    luxury_makes = metadata.get("luxury_makes", [])
+    
+    # Check if cylinders are valid for body type
+    if body_type in valid_cyls_by_bt:
+        valid_cyls_bt = valid_cyls_by_bt[body_type]
+        if cylinders not in valid_cyls_bt:
+            warnings.append(
+                f"**Unusual Configuration:** {cylinders}-cylinder engines are rare for {body_type}s. "
+                f"Typical options: {', '.join(str(c) for c in sorted(valid_cyls_bt))} cylinders."
+            )
+            is_plausible = False
+    
+    # Check if cylinders are valid for make
+    if make in valid_cyls_by_make:
+        valid_cyls_make = valid_cyls_by_make[make]
+        if cylinders not in valid_cyls_make:
+            make_display = make.replace('-', ' ').title()
+            warnings.append(
+                f"**Unusual for Brand:** {make_display} typically does not offer {cylinders}-cylinder engines. "
+                f"Common options: {', '.join(str(c) for c in sorted(valid_cyls_make))} cylinders."
+            )
+            is_plausible = False
+    
+    # Special check for luxury cars with low cylinders
+    if make in luxury_makes and cylinders < 6:
+        warnings.append(
+            f"**Luxury Brand Alert:** {make.replace('-', ' ').title()} vehicles typically have 6+ cylinder engines. "
+            f"A {cylinders}-cylinder configuration may not exist for this brand."
+        )
+        is_plausible = False
+    
+    # Check for economy cars with high cylinders
+    economy_makes = ["hyundai", "kia", "nissan", "toyota", "honda", "mazda", "mitsubishi", "suzuki"]
+    if make in economy_makes and cylinders >= 10:
+        warnings.append(
+            f"**Configuration Warning:** {make.replace('-', ' ').title()} typically does not offer {cylinders}-cylinder engines. "
+            f"This may produce unrealistic estimates."
+        )
+        is_plausible = False
+    
+    return is_plausible, warnings
 
 
 def build_input_row(
@@ -209,27 +266,54 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # ============================================================
 with tab1:
     st.header("Price Predictor")
+    
+    # Get R2 display (use original scale if available)
+    reg_metrics = metrics_data['regression'][best_reg_name]
+    display_r2 = reg_metrics.get('test_r2_original_scale', reg_metrics.get('test_r2', 0))
+    log_note = " (log-transformed target)" if reg_metrics.get('uses_log_transform', False) else ""
+    
     st.markdown(f"""
-    Estimate the market value of a used car using the **{best_reg_name}** model 
-    (Test R-squared: {metrics_data['regression'][best_reg_name]['test_r2']:.4f}, 
+    Estimate the market value of a used car using the **{best_reg_name}** model{log_note}
+    (Test R-squared: {display_r2:.4f}, 
     CV: {metrics_data['regression'][best_reg_name]['cv_mean']:.4f}).
     
     Configure the car attributes below and click "Predict Price" to see the estimated value.
+    
+    **Note:** The model validates your configuration against historical data to warn about 
+    unusual combinations (e.g., sedan with 12 cylinders) that may produce unrealistic estimates.
     """)
 
     make, model, year, mileage, body_type, cylinders, transmission, fuel_type, color, location, condition, features_selected = render_input_form("price")
 
     if st.button("Predict Price", type="primary", key="btn_price"):
+        # Validate configuration
+        is_plausible, validation_warnings = validate_car_configuration(make, body_type, cylinders)
+        
         row = build_input_row(
             make, model, year, mileage, body_type, cylinders,
             transmission, fuel_type, color, location, condition, features_selected
         )
         input_df = pd.DataFrame([row])
         input_processed = reg_preprocessor.transform(input_df[reg_feature_cols])
-        predicted_price = reg_model.predict(input_processed)[0]
+        
+        # Get prediction - handle log-transformed models
+        predicted_raw = reg_model.predict(input_processed)[0]
+        if uses_log_transform:
+            # Convert from log-space back to original price
+            predicted_price = np.expm1(predicted_raw)
+        else:
+            predicted_price = predicted_raw
         predicted_price = max(predicted_price, 0)
 
         st.markdown("---")
+        
+        # Show validation warnings first
+        if validation_warnings:
+            st.warning("**Configuration Validation Issues Detected:**")
+            for warning in validation_warnings:
+                st.markdown(f"- {warning}")
+            st.markdown("---")
+        
         st.subheader("Prediction Result")
 
         col1, col2, col3 = st.columns(3)
@@ -239,10 +323,17 @@ with tab1:
             "Segment",
             "Luxury" if row["Is_Luxury"] else "Mass Market"
         )
+        
+        # Confidence indicator based on configuration validity
+        if not is_plausible:
+            st.error(
+                "**Low Confidence Estimate:** The selected configuration is unusual and may not exist "
+                "in the real market. The predicted price should be treated with caution."
+            )
 
         st.markdown(f"""
         **Estimation Details:**
-        - Model used: {best_reg_name}
+        - Model used: {best_reg_name}{" (using log-transformed prices for better accuracy)" if uses_log_transform else ""}
         - The predicted price is based on {len(reg_feature_cols)} features
         - Key factors for this prediction: **{make.replace('-', ' ').title()}** brand, 
           **{cylinders}** cylinders, **{body_type}**, **{year}** model year
@@ -356,10 +447,15 @@ with tab3:
             transmission3, fuel_type3, color3, location3, condition3, features_selected3
         )
 
-        # Get predicted price for comparison
+        # Get predicted price for comparison (handle log-transformed models)
         input_df = pd.DataFrame([row])
         input_processed = reg_preprocessor.transform(input_df[reg_feature_cols])
-        predicted_price = max(reg_model.predict(input_processed)[0], 0)
+        predicted_raw = reg_model.predict(input_processed)[0]
+        if uses_log_transform:
+            predicted_price = np.expm1(predicted_raw)
+        else:
+            predicted_price = predicted_raw
+        predicted_price = max(predicted_price, 0)
 
         # Get anomaly score
         car_age = max(2025 - year3, 1)
@@ -479,14 +575,19 @@ with tab4:
             "aston-martin", "mclaren", "maybach", "porsche", "bugatti",
         ] else 0
 
-        # Get predicted price for the car
+        # Get predicted price for the car (handle log-transformed models)
         row = build_input_row(
             make4, model4, year4, mileage4, body_type4, cylinders4,
             transmission4, fuel_type4, color4, location4, condition4, features_selected4
         )
         input_df = pd.DataFrame([row])
         input_processed = reg_preprocessor.transform(input_df[reg_feature_cols])
-        predicted_price_seg = max(reg_model.predict(input_processed)[0], 0)
+        predicted_raw_seg = reg_model.predict(input_processed)[0]
+        if uses_log_transform:
+            predicted_price_seg = np.expm1(predicted_raw_seg)
+        else:
+            predicted_price_seg = predicted_raw_seg
+        predicted_price_seg = max(predicted_price_seg, 0)
 
         cluster_input = pd.DataFrame([{
             "Price": predicted_price_seg,

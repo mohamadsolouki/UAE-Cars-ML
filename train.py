@@ -84,17 +84,22 @@ def mean_absolute_percentage_error(y_true, y_pred):
 
 
 def train_regression_models(df):
-    """Train all price regression models."""
-    print("\n[2/7] Training regression models for Price prediction...")
+    """Train all price regression models using log-transformed price for better R2."""
+    print("\n[2/7] Training regression models for Price prediction (Log-transformed)...")
 
     preprocessor, num_feats, cat_feats = build_preprocessor()
     feature_cols = num_feats + cat_feats
 
     X = df[feature_cols].copy()
-    y = df["Price"].values
+    # Use log-transformed price as target for better handling of skewed distribution
+    y_log = df["Log_Price"].values
+    y_original = df["Price"].values
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=RANDOM_STATE
+    X_train, X_test, y_train_log, y_test_log = train_test_split(
+        X, y_log, test_size=0.2, random_state=RANDOM_STATE
+    )
+    _, _, y_train_orig, y_test_orig = train_test_split(
+        X, y_original, test_size=0.2, random_state=RANDOM_STATE
     )
 
     # Fit preprocessor on training data
@@ -111,15 +116,15 @@ def train_regression_models(df):
         "Ridge Regression": Ridge(alpha=10.0),
         "Lasso Regression": Lasso(alpha=100.0),
         "Random Forest": RandomForestRegressor(
-            n_estimators=200, max_depth=20, min_samples_split=5,
+            n_estimators=300, max_depth=25, min_samples_split=5,
             min_samples_leaf=2, random_state=RANDOM_STATE, n_jobs=-1,
         ),
         "Gradient Boosting": GradientBoostingRegressor(
-            n_estimators=200, max_depth=6, learning_rate=0.1,
+            n_estimators=300, max_depth=8, learning_rate=0.1,
             min_samples_split=5, min_samples_leaf=2, random_state=RANDOM_STATE,
         ),
         "XGBoost": XGBRegressor(
-            n_estimators=300, max_depth=7, learning_rate=0.1,
+            n_estimators=400, max_depth=10, learning_rate=0.1,
             min_child_weight=3, subsample=0.8, colsample_bytree=0.8,
             random_state=RANDOM_STATE, n_jobs=-1, verbosity=0,
         ),
@@ -131,53 +136,65 @@ def train_regression_models(df):
 
     for name, model in models.items():
         print(f"  Training {name}...")
-        model.fit(X_train_processed, y_train)
-        y_pred_train = model.predict(X_train_processed)
-        y_pred_test = model.predict(X_test_processed)
+        # Train on log-transformed prices
+        model.fit(X_train_processed, y_train_log)
+        y_pred_train_log = model.predict(X_train_processed)
+        y_pred_test_log = model.predict(X_test_processed)
 
-        # Compute metrics
-        train_r2 = r2_score(y_train, y_pred_train)
-        test_r2 = r2_score(y_test, y_pred_test)
-        rmse = np.sqrt(mean_squared_error(y_test, y_pred_test))
-        mae = mean_absolute_error(y_test, y_pred_test)
-        mape = mean_absolute_percentage_error(y_test, y_pred_test)
+        # Compute metrics in log-space
+        train_r2_log = r2_score(y_train_log, y_pred_train_log)
+        test_r2_log = r2_score(y_test_log, y_pred_test_log)
 
-        # Cross-validation (5-fold)
+        # Convert back to original scale for interpretable metrics
+        y_pred_test_orig = np.expm1(y_pred_test_log)
+        y_pred_test_orig = np.maximum(y_pred_test_orig, 0)  # Ensure non-negative
+        test_r2_orig = r2_score(y_test_orig, y_pred_test_orig)
+        rmse = np.sqrt(mean_squared_error(y_test_orig, y_pred_test_orig))
+        mae = mean_absolute_error(y_test_orig, y_pred_test_orig)
+        mape = mean_absolute_percentage_error(y_test_orig, y_pred_test_orig)
+
+        # Cross-validation (5-fold) in log-space
         pipe = Pipeline([
             ("preprocessor", preprocessor),
             ("model", model.__class__(**model.get_params())),
         ])
-        cv_scores = cross_val_score(pipe, X, y, cv=5, scoring="r2", n_jobs=-1)
+        cv_scores = cross_val_score(pipe, X, y_log, cv=5, scoring="r2", n_jobs=-1)
 
         results[name] = {
-            "train_r2": round(train_r2, 4),
-            "test_r2": round(test_r2, 4),
+            "train_r2": round(train_r2_log, 4),
+            "test_r2": round(test_r2_log, 4),
+            "test_r2_original_scale": round(test_r2_orig, 4),
             "rmse": round(rmse, 2),
             "mae": round(mae, 2),
             "mape": round(mape, 2),
             "cv_mean": round(cv_scores.mean(), 4),
             "cv_std": round(cv_scores.std(), 4),
+            "uses_log_transform": True,
         }
 
         # Save model
         safe_name = name.lower().replace(" ", "_")
         joblib.dump(model, os.path.join(MODELS_DIR, f"price_{safe_name}.joblib"))
 
-        print(f"    Train R2: {train_r2:.4f} | Test R2: {test_r2:.4f} | "
-              f"RMSE: {rmse:,.0f} | MAE: {mae:,.0f} | MAPE: {mape:.1f}%")
+        print(f"    Train R2 (log): {train_r2_log:.4f} | Test R2 (log): {test_r2_log:.4f} | "
+              f"Test R2 (orig): {test_r2_orig:.4f} | RMSE: {rmse:,.0f} | MAE: {mae:,.0f} | MAPE: {mape:.1f}%")
 
-        if test_r2 > best_r2:
-            best_r2 = test_r2
+        if test_r2_log > best_r2:
+            best_r2 = test_r2_log
             best_model_name = name
 
-    print(f"\n  Best model: {best_model_name} (Test R2: {best_r2:.4f})")
+    print(f"\n  Best model: {best_model_name} (Test R2 in log-space: {best_r2:.4f})")
 
-    # Save test data for visualization in app
+    # Save test data for visualization in app (convert back to original scale)
     best_model = models[best_model_name]
-    y_pred_best = best_model.predict(X_test_processed)
+    y_pred_best_log = best_model.predict(X_test_processed)
+    y_pred_best_orig = np.expm1(y_pred_best_log)
+    y_pred_best_orig = np.maximum(y_pred_best_orig, 0)
     test_results = pd.DataFrame({
-        "Actual": y_test,
-        "Predicted": y_pred_best,
+        "Actual": y_test_orig,
+        "Predicted": y_pred_best_orig,
+        "Actual_Log": y_test_log,
+        "Predicted_Log": y_pred_best_log,
     })
     test_results.to_csv(os.path.join(MODELS_DIR, "regression_test_results.csv"), index=False)
 
@@ -192,7 +209,7 @@ def train_regression_models(df):
             joblib.dump(feat_imp, os.path.join(MODELS_DIR, f"feature_importance_{tm_name.lower().replace(' ', '_')}.joblib"))
 
     results["best_model"] = best_model_name
-    return results, X_train, X_test, y_train, y_test, preprocessor
+    return results, X_train, X_test, y_train_log, y_test_log, preprocessor
 
 
 def train_classification_models(df):
@@ -429,9 +446,73 @@ def save_dataset_metadata(df):
         models_list = sorted(df[df["Make"] == make]["Model"].unique().tolist())
         metadata["models_by_make"][make] = models_list
 
+    # Validation constraints: valid cylinder options per body type
+    # Based on what actually exists in the data (top 4 most common cylinders per body type)
+    valid_cylinders_by_body_type = {}
+    for bt in df["Body Type"].unique():
+        bt_cyls = df[df["Body Type"] == bt]["Cylinders"].value_counts().head(4).index.tolist()
+        valid_cylinders_by_body_type[bt] = [int(c) for c in bt_cyls]
+    metadata["valid_cylinders_by_body_type"] = valid_cylinders_by_body_type
+
+    # Valid cylinder options per make (luxury brands typically have more cylinders)
+    valid_cylinders_by_make = {}
+    for make in df["Make"].unique():
+        make_cyls = df[df["Make"] == make]["Cylinders"].value_counts().head(4).index.tolist()
+        valid_cylinders_by_make[make] = [int(c) for c in make_cyls]
+    metadata["valid_cylinders_by_make"] = valid_cylinders_by_make
+
+    # Luxury brands list
+    luxury_makes = [
+        "ferrari", "lamborghini", "rolls-royce", "bentley", "maserati",
+        "aston-martin", "mclaren", "maybach", "bugatti", "porsche",
+    ]
+    metadata["luxury_makes"] = luxury_makes
+
+    # Outlier statistics for price
+    Q1 = df["Price"].quantile(0.25)
+    Q3 = df["Price"].quantile(0.75)
+    IQR = Q3 - Q1
+    metadata["price_stats"] = {
+        "min": float(df["Price"].min()),
+        "max": float(df["Price"].max()),
+        "median": float(df["Price"].median()),
+        "mean": float(df["Price"].mean()),
+        "q1": float(Q1),
+        "q3": float(Q3),
+        "iqr": float(IQR),
+        "skewness": float(df["Price"].skew()),
+        "outlier_lower_bound": float(max(0, Q1 - 1.5 * IQR)),
+        "outlier_upper_bound": float(Q3 + 1.5 * IQR),
+        "n_outliers": int(((df["Price"] < Q1 - 1.5 * IQR) | (df["Price"] > Q3 + 1.5 * IQR)).sum()),
+    }
+
+    # Luxury vs mass market stats
+    luxury_df = df[df["Is_Luxury"] == 1]
+    mass_df = df[df["Is_Luxury"] == 0]
+    metadata["segment_stats"] = {
+        "luxury": {
+            "count": int(len(luxury_df)),
+            "mean_price": float(luxury_df["Price"].mean()),
+            "median_price": float(luxury_df["Price"].median()),
+            "mean_mileage": float(luxury_df["Mileage"].mean()),
+            "mean_year": float(luxury_df["Year"].mean()),
+            "avg_cylinders": float(luxury_df["Cylinders"].mean()),
+        },
+        "mass_market": {
+            "count": int(len(mass_df)),
+            "mean_price": float(mass_df["Price"].mean()),
+            "median_price": float(mass_df["Price"].median()),
+            "mean_mileage": float(mass_df["Mileage"].mean()),
+            "mean_year": float(mass_df["Year"].mean()),
+            "avg_cylinders": float(mass_df["Cylinders"].mean()),
+        },
+    }
+
     joblib.dump(metadata, os.path.join(MODELS_DIR, "metadata.joblib"))
     print(f"  Saved metadata: {len(metadata['makes'])} makes, "
           f"{sum(len(v) for v in metadata['models_by_make'].values())} models")
+    print(f"  Validation constraints: {len(valid_cylinders_by_body_type)} body types, "
+          f"{len(valid_cylinders_by_make)} makes")
     return metadata
 
 

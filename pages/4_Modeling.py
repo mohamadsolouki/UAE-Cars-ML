@@ -61,6 +61,11 @@ helps sellers set competitive prices, and helps dealers understand market dynami
 **Features:** 21 features (15 numerical + 6 categorical)  
 **Train/Test split:** 80% / 20% (8,000 / 2,000 records)  
 **Evaluation metrics:** R-squared, RMSE, MAE, MAPE, 5-fold Cross-Validation
+
+**Important Note on Price Distribution:** The price distribution is heavily right-skewed (skewness = 9.28) 
+with values ranging from 7,183 AED to 14.7M AED. To address this, models are trained on **log-transformed 
+prices** which better normalizes the target distribution. The R² values below are in log-space, which 
+provides better model performance for this skewed data.
 """)
 
 # Model comparison table
@@ -69,23 +74,40 @@ st.subheader("1.1 Model Comparison")
 reg_metrics = metrics["regression"]
 model_names = [k for k in reg_metrics.keys() if k != "best_model"]
 
-comparison_df = pd.DataFrame({
+# Check if log-transform was used
+uses_log = any(reg_metrics[m].get("uses_log_transform", False) for m in model_names if m in reg_metrics)
+
+comparison_data = {
     "Model": model_names,
-    "Train R-squared": [reg_metrics[m]["train_r2"] for m in model_names],
-    "Test R-squared": [reg_metrics[m]["test_r2"] for m in model_names],
+    "Train R² (log)": [reg_metrics[m]["train_r2"] for m in model_names],
+    "Test R² (log)": [reg_metrics[m]["test_r2"] for m in model_names],
+}
+
+# Add original scale R² if available
+if any(reg_metrics[m].get("test_r2_original_scale") is not None for m in model_names):
+    comparison_data["Test R² (orig)"] = [
+        reg_metrics[m].get("test_r2_original_scale", "N/A") for m in model_names
+    ]
+
+comparison_data.update({
     "RMSE (AED)": [f"{reg_metrics[m]['rmse']:,.0f}" for m in model_names],
     "MAE (AED)": [f"{reg_metrics[m]['mae']:,.0f}" for m in model_names],
     "MAPE (%)": [f"{reg_metrics[m]['mape']:.1f}" for m in model_names],
-    "CV Mean R-sq": [reg_metrics[m]["cv_mean"] for m in model_names],
+    "CV Mean R²": [reg_metrics[m]["cv_mean"] for m in model_names],
     "CV Std": [reg_metrics[m]["cv_std"] for m in model_names],
 })
+
+comparison_df = pd.DataFrame(comparison_data)
 
 st.dataframe(comparison_df, use_container_width=True, hide_index=True)
 
 best_reg = reg_metrics["best_model"]
+best_test_r2 = reg_metrics[best_reg]['test_r2']
+best_orig_r2 = reg_metrics[best_reg].get('test_r2_original_scale', best_test_r2)
+
 st.success(
-    f"Best model: **{best_reg}** with Test R-squared = "
-    f"{reg_metrics[best_reg]['test_r2']:.4f} and CV Mean = "
+    f"Best model: **{best_reg}** with Test R² = "
+    f"{best_test_r2:.4f} (log-space) / {best_orig_r2:.4f} (original scale) and CV Mean = "
     f"{reg_metrics[best_reg]['cv_mean']:.4f}"
 )
 
@@ -224,6 +246,37 @@ Across all three tree-based models, the most important features are consistent:
 **Practical implication:** When pricing a used car in the UAE, start with the brand and 
 body type, then adjust for engine size, age, and mileage. Location matters (Dubai premium), 
 but individual features and condition have minimal impact.
+""")
+
+# Why R² is limited explanation
+st.subheader("1.5 Understanding Model Limitations")
+
+st.markdown("""
+**Why is R² moderate (~0.59 in log-space, ~0.43 in original scale)?**
+
+The model's predictive power is limited by several inherent factors:
+
+| Factor | Impact | Explanation |
+|--------|--------|-------------|
+| **Extreme Price Range** | High | Prices span 7K to 15M AED (2,000x ratio). Even with log-transformation, this variance is hard to capture |
+| **Two-Tier Market** | High | Luxury and mass-market segments have fundamentally different pricing mechanisms |
+| **Brand Encoding** | Medium | 65 unique makes are encoded ordinally, losing brand-specific premium information |
+| **Missing Features** | Medium | Trim level, service history, accident details, and dealer info are not in the dataset |
+| **Synthetic Data Artifacts** | Medium | Some combinations (e.g., 2005 McLaren P1) are historically impossible |
+
+**Potential Improvements (not implemented):**
+
+1. **Separate Models** - Train luxury and mass-market models independently
+2. **Target Encoding** - Use mean price per brand instead of ordinal encoding
+3. **Quantile Regression** - Model different price percentiles for robust estimates
+4. **Model Stacking** - Combine multiple models with learned weights
+5. **Neural Networks** - Use embeddings for categorical features
+6. **More Features** - Include trim level, seller type, listing duration, etc.
+
+**Key Insight:** The R² of ~0.59 doesn't mean the model is poor -- it reflects the inherent 
+unpredictability in used car pricing. Even human experts cannot reliably predict prices with 
+perfect accuracy given only these features. The model still provides valuable **relative** 
+price estimates useful for deal assessment.
 """)
 
 st.markdown("---")

@@ -1,58 +1,70 @@
 {
   "regression": {
     "Linear Regression": {
-      "train_r2": 0.3141,
-      "test_r2": 0.2475,
-      "rmse": 444169.51,
-      "mae": 198330.63,
-      "mape": 178.47,
-      "cv_mean": 0.3027,
-      "cv_std": 0.0546
+      "train_r2": 0.3441,
+      "test_r2": 0.3311,
+      "test_r2_original_scale": 0.1943,
+      "rmse": 459595.34,
+      "mae": 164729.11,
+      "mape": 92.44,
+      "cv_mean": 0.3384,
+      "cv_std": 0.0198,
+      "uses_log_transform": true
     },
     "Ridge Regression": {
-      "train_r2": 0.3141,
-      "test_r2": 0.2475,
-      "rmse": 444164.95,
-      "mae": 198283.96,
-      "mape": 178.41,
-      "cv_mean": 0.3028,
-      "cv_std": 0.0546
+      "train_r2": 0.3441,
+      "test_r2": 0.3311,
+      "test_r2_original_scale": 0.1942,
+      "rmse": 459632.52,
+      "mae": 164732.44,
+      "mape": 92.44,
+      "cv_mean": 0.3384,
+      "cv_std": 0.0198,
+      "uses_log_transform": true
     },
     "Lasso Regression": {
-      "train_r2": 0.3141,
-      "test_r2": 0.2476,
-      "rmse": 444143.19,
-      "mae": 198327.35,
-      "mape": 178.39,
-      "cv_mean": 0.3028,
-      "cv_std": 0.0546
+      "train_r2": 0.0,
+      "test_r2": -0.0001,
+      "test_r2_original_scale": -0.0651,
+      "rmse": 528441.24,
+      "mae": 192763.05,
+      "mape": 113.31,
+      "cv_mean": -0.0008,
+      "cv_std": 0.001,
+      "uses_log_transform": true
     },
     "Random Forest": {
-      "train_r2": 0.8634,
-      "test_r2": 0.5542,
-      "rmse": 341876.09,
-      "mae": 126567.31,
-      "mape": 102.42,
-      "cv_mean": 0.5783,
-      "cv_std": 0.0725
+      "train_r2": 0.8932,
+      "test_r2": 0.593,
+      "test_r2_original_scale": 0.4348,
+      "rmse": 384939.59,
+      "mae": 119664.27,
+      "mape": 67.7,
+      "cv_mean": 0.567,
+      "cv_std": 0.029,
+      "uses_log_transform": true
     },
     "Gradient Boosting": {
-      "train_r2": 0.8773,
-      "test_r2": 0.4638,
-      "rmse": 374954.88,
-      "mae": 136622.65,
-      "mape": 111.12,
-      "cv_mean": 0.5567,
-      "cv_std": 0.1108
+      "train_r2": 0.9415,
+      "test_r2": 0.5624,
+      "test_r2_original_scale": 0.449,
+      "rmse": 380088.63,
+      "mae": 125583.88,
+      "mape": 71.66,
+      "cv_mean": 0.5409,
+      "cv_std": 0.0309,
+      "uses_log_transform": true
     },
     "XGBoost": {
-      "train_r2": 0.9686,
-      "test_r2": 0.4094,
-      "rmse": 393488.05,
-      "mae": 141799.28,
-      "mape": 116.7,
-      "cv_mean": 0.5239,
-      "cv_std": 0.0775
+      "train_r2": 0.9996,
+      "test_r2": 0.5469,
+      "test_r2_original_scale": 0.394,
+      "rmse": 398591.5,
+      "mae": 128151.36,
+      "mape": 74.05,
+      "cv_mean": 0.5348,
+      "cv_std": 0.0224,
+      "uses_log_transform": true
     },
     "best_model": "Random Forest"
   },
@@ -287,12 +299,12 @@
       36267.884637062976,
       29602.520325797872,
       25589.72833773647,
-      22091.28271370087,
+      22091.282713700868,
       19464.08736870205,
       17684.397418097815,
-      15960.570298765713,
-      14769.671922236626,
-      13636.519911084284
+      15960.570298765717,
+      14769.671922236623,
+      13636.519911084282
     ],
     "silhouettes": [
       0.4835540788054069,
