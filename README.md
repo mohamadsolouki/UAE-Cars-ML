@@ -55,7 +55,7 @@ pip install -r requirements.txt
 python train.py
 
 # Launch the app
-streamlit run app.py
+streamlit run home.py
 ```
 
 ## Project Structure
