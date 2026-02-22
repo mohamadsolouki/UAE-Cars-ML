@@ -45,7 +45,7 @@ Isolation Forest identifies 5% of listings as anomalous -- potential deals or ov
 
 ```bash
 # Clone the repository
-git clone https://github.com/mohamadsolouki/UAE-Cars-ML.git
+git clone https://github.com/fatehartin/UAE-Cars-ML.git
 cd UAE-Cars-ML
 
 # Install dependencies
