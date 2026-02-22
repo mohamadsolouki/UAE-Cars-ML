@@ -14,11 +14,21 @@ import joblib
 import json
 import sys
 import os
+import pickle
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.preprocessing import CONDITION_ORDER, ALL_FEATURES
 from src.feature_engineering import get_model_features, get_categorical_features
 from src.visualization import apply_layout, COLOR_PRIMARY, COLOR_SECONDARY, COLOR_ACCENT, COLOR_WARN
+
+# Compatibility fix for sklearn version mismatch with pickled models
+# This monkey-patches the missing _RemainderColsList class
+import sklearn.compose._column_transformer as ct
+if not hasattr(ct, '_RemainderColsList'):
+    # Create a dummy class for compatibility with old pickled ColumnTransformers
+    class _RemainderColsList(list):
+        pass
+    ct._RemainderColsList = _RemainderColsList
 
 st.set_page_config(
     page_title="Predictions | UAE Cars ML", layout="wide", page_icon="--"

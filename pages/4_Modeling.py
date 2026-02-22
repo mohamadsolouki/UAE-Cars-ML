@@ -15,6 +15,15 @@ import joblib
 import sys
 import os
 
+# Compatibility fix for sklearn version mismatch with pickled models
+# This monkey-patches the missing _RemainderColsList class
+import sklearn.compose._column_transformer as ct
+if not hasattr(ct, '_RemainderColsList'):
+    # Create a dummy class for compatibility with old pickled ColumnTransformers
+    class _RemainderColsList(list):
+        pass
+    ct._RemainderColsList = _RemainderColsList
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.data_loader import load_engineered_data
 from src.visualization import (
