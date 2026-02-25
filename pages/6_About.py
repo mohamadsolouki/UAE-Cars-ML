@@ -312,7 +312,7 @@ This project is licensed under the **MIT License**. See the LICENSE file for det
 
 ### Author
 
-Mohamad Solouki -- 2026
+Artin Fateh -- 2026
 
 Built with Streamlit, scikit-learn, XGBoost, and Plotly.
 """)
